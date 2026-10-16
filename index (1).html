@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spot Board</title>
+<style>
+  :root{--bg:#f5f6f8;--card:#fff;--fg:#171a21;--muted:#69707f;--line:#dde0e6;--done:#1d8a4e}
+  @media(prefers-color-scheme:dark){:root{--bg:#14161b;--card:#1d2027;--fg:#eceef2;--muted:#9aa1ae;--line:#2c303a;--done:#5cc985}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px}
+  .wrap{max-width:600px;margin:0 auto}
+  h1{font-size:18px;margin:0 0 4px}
+  .tally{color:var(--muted);font-size:13px;margin-bottom:12px}
+  .me{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);margin-bottom:8px}
+  .me input{width:7ch;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);text-transform:uppercase;font:inherit}
+  h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:20px 2px 6px}
+  ul{list-style:none;margin:0;padding:0;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  li{display:flex;align-items:center;gap:10px;padding:11px 12px;border-top:1px solid var(--line);cursor:pointer;user-select:none}
+  li:first-child{border-top:0}
+  .box{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);flex:none;display:grid;place-items:center;color:#fff;font-size:13px}
+  li.done .box{background:var(--done);border-color:var(--done)}
+  .name{flex:1;font-weight:500}
+  li.done .name{color:var(--muted);text-decoration:line-through;font-weight:400}
+  .ed{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-radius:4px;padding:1px 6px}
+  .by{font:12px ui-monospace,Menlo,monospace;color:var(--done);white-space:nowrap}
+  .err{color:#c0392b;font-size:13px}
+  .pen{flex:none;width:28px;height:28px;border:0;background:none;color:var(--muted);font-size:15px;cursor:pointer;border-radius:6px}
+  .pen:hover{background:var(--line)}
+  li.edit{cursor:default;flex-wrap:wrap}
+  li.edit input{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);min-width:0}
+  li.edit .n{flex:1 1 160px}li.edit .e{width:8ch;text-transform:uppercase;font-family:ui-monospace,Menlo,monospace}
+  .btns{display:flex;gap:6px;width:100%}
+  .btns button{font:inherit;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+  .btns .save{background:var(--done);border-color:var(--done);color:#fff}
+  .btns .del{color:#c0392b;margin-left:auto}
+  .add{display:flex;gap:6px;margin-top:8px}
+  .add input{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);min-width:0}
+  .add .n{flex:1}.add .e{width:8ch;text-transform:uppercase;font-family:ui-monospace,Menlo,monospace}
+  .add button{font:inherit;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+  .newgroup{margin-top:24px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Spot Board</h1>
+  <div class="tally" id="tally">Loading…</div>
+  <div class="me"><label for="me">Your initials</label><input id="me" maxlength="4" placeholder="JR"></div>
+  <div id="app"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+// ---- fill these two in from Supabase → Project Settings → API ----
+const SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
+const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
+// -------------------------------------------------------------------
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const app = document.getElementById('app'), tally = document.getElementById('tally'), meIn = document.getElementById('me');
+let rows = [], editing = null;
+
+try { meIn.value = localStorage.getItem('me') || ''; } catch (e) {}
+meIn.addEventListener('input', () => { try { localStorage.setItem('me', meIn.value.toUpperCase()); } catch (e) {} });
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const when = iso => { if (!iso) return ''; const d = new Date(iso); let h = d.getHours(), m = d.getMinutes(); const ap = h >= 12 ? 'p' : 'a'; h = h % 12 || 12; return `${h}:${m < 10 ? '0' : ''}${m}${ap}`; };
+
+function render() {
+  const groups = [];
+  for (const r of rows) { let g = groups.find(g => g.name === r.state); if (!g) { g = { name: r.state, items: [] }; groups.push(g); } g.items.push(r); }
+  const done = rows.filter(r => r.done).length;
+  tally.textContent = rows.length ? `${done} of ${rows.length} done` : 'No spots yet — run the SQL to seed the table.';
+  app.innerHTML = groups.map(g => `<h2>${esc(g.name)}</h2><ul>` + g.items.map(r =>
+    r.id === editing
+    ? `<li class="edit" data-id="${r.id}">
+        <input class="n" id="n${r.id}" value="${esc(r.name)}" placeholder="Spot name">
+        <input class="e" id="e${r.id}" value="${esc(r.editor)}" placeholder="who" maxlength="6">
+        <div class="btns"><button class="save" data-act="save">Save</button><button data-act="cancel">Cancel</button><button class="del" data-act="del">Delete</button></div>
+      </li>`
+    : `<li class="${r.done ? 'done' : ''}" data-id="${r.id}">
+      <span class="box">${r.done ? '✓' : ''}</span>
+      <span class="name">${esc(r.name)}</span>
+      ${r.editor ? `<span class="ed">${esc(r.editor)}</span>` : ''}
+      ${r.done ? `<span class="by">${esc(r.done_by || '')} ${when(r.done_at)}</span>` : ''}
+      <button class="pen" data-act="edit" title="Edit">✎</button>
+    </li>`).join('') + `</ul>
+    <form class="add" data-state="${esc(g.name)}"><input class="n" placeholder="Add a spot" required><input class="e" placeholder="who" maxlength="6"><button>Add</button></form>`).join('')
+    + `<form class="add newgroup" data-state=""><input class="e" style="width:10ch;text-transform:none;font-family:inherit" placeholder="State" required><input class="n" placeholder="First spot" required><button>Add state</button></form>`;
+}
+
+async function load() {
+  const { data, error } = await sb.from('spots').select('*').order('sort');
+  if (error) { tally.innerHTML = `<span class="err">Couldn't load: ${esc(error.message)}</span>`; return; }
+  rows = data; render();
+}
+
+function fail(msg) { tally.innerHTML = `<span class="err">${esc(msg)}</span>`; load(); }
+
+app.addEventListener('click', async e => {
+  const li = e.target.closest('li'); if (!li) return;
+  const r = rows.find(r => r.id == li.dataset.id); if (!r) return;
+  const act = e.target.dataset.act;
+  if (act === 'edit')   { editing = r.id; render(); document.getElementById('n' + r.id).focus(); return; }
+  if (act === 'cancel') { editing = null; render(); return; }
+  if (act === 'save') {
+    const name = document.getElementById('n' + r.id).value.trim(), editor = document.getElementById('e' + r.id).value.trim().toUpperCase();
+    if (!name) return;
+    editing = null; Object.assign(r, { name, editor }); render();
+    const { error } = await sb.from('spots').update({ name, editor }).eq('id', r.id);
+    if (error) fail('Save failed: ' + error.message);
+    return;
+  }
+  if (act === 'del') {
+    editing = null; rows = rows.filter(x => x.id !== r.id); render();
+    const { error } = await sb.from('spots').delete().eq('id', r.id);
+    if (error) fail('Delete failed: ' + error.message);
+    return;
+  }
+  if (li.classList.contains('edit')) return;
+  const me = (meIn.value || '').trim().toUpperCase();
+  const patch = r.done ? { done: false, done_by: null, done_at: null } : { done: true, done_by: me || null, done_at: new Date().toISOString() };
+  Object.assign(r, patch); render();                // optimistic
+  const { error } = await sb.from('spots').update(patch).eq('id', r.id);
+  if (error) fail('Save failed: ' + error.message);
+});
+
+app.addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, name = f.querySelector('.n').value.trim(), eVal = f.querySelector('.e').value.trim();
+  const state = f.dataset.state || eVal, editor = f.dataset.state ? eVal.toUpperCase() : null;
+  if (!name || !state) return;
+  const sort = rows.length ? Math.max(...rows.map(r => r.sort)) + 1 : 1;
+  f.reset();
+  const { error } = await sb.from('spots').insert({ sort, state, name, editor, done: false });
+  if (error) fail('Add failed: ' + error.message); else load();
+});
+
+// live updates: anyone's tap shows up on everyone's phone
+sb.channel('spots').on('postgres_changes', { event: '*', schema: 'public', table: 'spots' }, load).subscribe();
+load();
+</script>
+</body>
+</html>
