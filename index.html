@@ -31,8 +31,9 @@
   .name{flex:1;font-weight:500}
   li[data-st="Done"] .name,li[data-st="Not now"] .name{color:var(--muted);font-weight:400}
   li[data-st="Done"] .name{text-decoration:line-through}
+  li .ed{display:inline-block;text-decoration:none}
   .ed{font:12px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-radius:4px;padding:1px 6px}
-  .by{font:11px ui-monospace,Menlo,monospace;color:var(--muted);white-space:nowrap}
+  .by{display:inline-block;font:11px ui-monospace,Menlo,monospace;color:var(--muted);white-space:nowrap;text-decoration:none}
   .err{color:#c0392b;font-size:13px}
   .pen{flex:none;width:28px;height:28px;border:0;background:none;color:var(--muted);font-size:15px;cursor:pointer;border-radius:6px}
   .pen:hover{background:var(--line)}
@@ -98,11 +99,16 @@ function render() {
     + `<form class="add newgroup" data-state=""><input class="e" style="width:10ch;text-transform:none;font-family:inherit" placeholder="State" required><input class="n" placeholder="First spot" required><button>Add state</button></form>`;
 }
 
+let pendingLoad = false;
+const busyControl = () => { const a = document.activeElement; return a && app.contains(a) && a.matches('select, input, button'); };
 async function load() {
+  if (busyControl()) { pendingLoad = true; return; }
   const { data, error } = await sb.from('spots').select('*').order('sort');
   if (error) { tally.innerHTML = `<span class="err">Couldn't load: ${esc(error.message)}</span>`; return; }
   rows = data; render();
 }
+
+app.addEventListener('focusout', () => setTimeout(() => { if (pendingLoad && !busyControl()) { pendingLoad = false; load(); } }, 150));
 
 function fail(msg) { tally.innerHTML = `<span class="err">${esc(msg)}</span>`; load(); }
 
