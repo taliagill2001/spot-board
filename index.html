@@ -132,10 +132,20 @@ app.addEventListener('click', async e => {
     if (error) fail('Delete failed: ' + error.message);
     return;
   }
-  if (li.classList.contains('edit')) return;
-  const me = (meIn.value || '').trim().toUpperCase();
-  const patch = r.done ? { done: false, done_by: null, done_at: null } : { done: true, done_by: me || null, done_at: new Date().toISOString() };
-  Object.assign(r, patch); render();                // optimistic
+});
+
+app.addEventListener('change', async e => {
+  if (!e.target.matches('select.st')) return;
+  const li = e.target.closest('li'), r = rows.find(r => r.id == li.dataset.id); if (!r) return;
+  const me = (meIn.value || '').trim().toUpperCase(), status = e.target.value;
+  const patch = { status, done: status === 'Done', done_by: me || null, done_at: new Date().toISOString() };
+  if (status === 'To do') { patch.done_by = null; patch.done_at = null; }
+  Object.assign(r, patch);
+  li.dataset.st = status;
+  const nm = li.querySelector('.name'), old = nm.querySelector('.by'); if (old) { old.previousSibling?.remove(); old.remove(); }
+  if (patch.done_by || patch.done_at) nm.insertAdjacentHTML('beforeend', `<br><span class="by">${esc(patch.done_by || '')} ${when(patch.done_at)}</span>`);
+  tally.textContent = `${rows.filter(x => st(x) === 'Done').length} of ${rows.length} done`;
+  e.target.blur();
   const { error } = await sb.from('spots').update(patch).eq('id', r.id);
   if (error) fail('Save failed: ' + error.message);
 });
