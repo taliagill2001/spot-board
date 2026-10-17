@@ -24,6 +24,16 @@
   li[data-st="Sent to production"] select.st{background-color:#e3ecfb;color:#1f4fa3;border-color:#b7cbf0}
   li[data-st="Done"] select.st{background-color:var(--done);color:#fff;border-color:var(--done)}
   li[data-st="Not now"] select.st{color:var(--muted);text-decoration:line-through}
+  li[data-st="Ready for Charlie review"]{background:#fff3c4;box-shadow:inset 4px 0 0 #e0a400}
+  li[data-st="Ready for Charlie review"] select.st{background-color:#e0a400;color:#2b1d00;border-color:#e0a400;font-weight:600}
+  @media(prefers-color-scheme:dark){
+    li[data-st="Ready for Charlie review"]{background:#3a2e00;box-shadow:inset 4px 0 0 #f0b400}
+    li[data-st="Ready for Charlie review"] select.st{background-color:#f0b400;color:#2b1d00;border-color:#f0b400}
+  }
+  a.doc{display:inline-block;font-size:12px;color:#1f4fa3;text-decoration:none;border:1px solid #b7cbf0;background:#e3ecfb;border-radius:4px;padding:1px 7px;margin-left:4px;white-space:nowrap}
+  a.doc:hover{text-decoration:underline}
+  @media(prefers-color-scheme:dark){a.doc{color:#8fb0f0;background:#17294a;border-color:#2b4478}}
+  li.edit .l{flex:1 1 100%;font-size:13px}
   @media(prefers-color-scheme:dark){
     li[data-st="Drafted"] select.st{background-color:#3b2a10;color:#e3a04a;border-color:#5a4020}
     li[data-st="Sent to production"] select.st{background-color:#17294a;color:#8fb0f0;border-color:#2b4478}
@@ -64,12 +74,13 @@
 // ---- fill these two in from Supabase → Project Settings → API ----
 const SUPABASE_URL = "https://rddidsuodnqgbbfnawzs.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_FoS1KTpBm2R7D9e1csN_cg_62Rd0OvM";
+
 // -------------------------------------------------------------------
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const app = document.getElementById('app'), tally = document.getElementById('tally'), meIn = document.getElementById('me');
 let rows = [], editing = null;
-const STATUSES = ['To do', 'Drafted', 'Sent to production', 'Done', 'Not now'];
+const STATUSES = ['To do', 'Drafted', 'Ready for Charlie review', 'Sent to production', 'Done', 'Not now'];
 const st = r => r.status || 'To do';
 
 try { meIn.value = localStorage.getItem('me') || ''; } catch (e) {}
@@ -88,10 +99,11 @@ function render() {
     ? `<li class="edit" data-id="${r.id}">
         <input class="n" id="n${r.id}" value="${esc(r.name)}" placeholder="Spot name">
         <input class="e" id="e${r.id}" value="${esc(r.editor)}" placeholder="who" maxlength="6">
+        <input class="l" id="l${r.id}" value="${esc(r.link)}" placeholder="Paste script doc link (optional)" type="url">
         <div class="btns"><button class="save" data-act="save">Save</button><button data-act="cancel">Cancel</button><button class="del" data-act="del">Delete</button></div>
       </li>`
     : `<li data-st="${esc(st(r))}" data-id="${r.id}">
-      <span class="name">${esc(r.name)}${r.editor ? ` <span class="ed">${esc(r.editor)}</span>` : ''}${r.done_by || r.done_at ? `<br><span class="by">${esc(r.done_by || '')} ${when(r.done_at)}</span>` : ''}</span>
+      <span class="name">${esc(r.name)}${r.editor ? ` <span class="ed">${esc(r.editor)}</span>` : ''}${r.link ? ` <a class="doc" href="${esc(r.link)}" target="_blank" rel="noopener">Script ↗</a>` : ''}${r.done_by || r.done_at ? `<br><span class="by">${esc(r.done_by || '')} ${when(r.done_at)}</span>` : ''}</span>
       <select class="st" id="s${r.id}" aria-label="Status">${STATUSES.map(x => `<option${x === st(r) ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select>
       <button class="pen" data-act="edit" title="Edit">✎</button>
     </li>`).join('') + `</ul>
@@ -120,9 +132,10 @@ app.addEventListener('click', async e => {
   if (act === 'cancel') { editing = null; render(); return; }
   if (act === 'save') {
     const name = document.getElementById('n' + r.id).value.trim(), editor = document.getElementById('e' + r.id).value.trim().toUpperCase();
+    let link = document.getElementById('l' + r.id).value.trim(); if (link && !/^https?:\/\//i.test(link)) link = 'https://' + link;
     if (!name) return;
-    editing = null; Object.assign(r, { name, editor }); render();
-    const { error } = await sb.from('spots').update({ name, editor }).eq('id', r.id);
+    editing = null; Object.assign(r, { name, editor, link: link || null }); render();
+    const { error } = await sb.from('spots').update({ name, editor, link: link || null }).eq('id', r.id);
     if (error) fail('Save failed: ' + error.message);
     return;
   }
